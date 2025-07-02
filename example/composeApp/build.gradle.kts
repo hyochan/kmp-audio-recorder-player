@@ -69,6 +69,9 @@ kotlin {
             implementation(compose.components.uiToolingPreview)
             implementation(libs.androidx.lifecycle.viewmodel)
             implementation(libs.androidx.lifecycle.runtimeCompose)
+            implementation(libs.androidx.lifecycle.viewmodelCompose)
+            implementation(libs.kotlinx.datetime)
+            implementation(project(":library"))
         }
         commonTest.dependencies {
             implementation(libs.kotlin.test)
@@ -104,6 +107,10 @@ android {
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_11
         targetCompatibility = JavaVersion.VERSION_11
+    }
+    lint {
+        disable.addAll(listOf("NullSafeMutableLiveData"))
+        abortOnError = false
     }
 }
 

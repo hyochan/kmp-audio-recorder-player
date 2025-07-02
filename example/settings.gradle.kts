@@ -33,5 +33,5 @@ plugins {
 }
 
 include(":composeApp")
-// 외부의 ../library 포함
-includeBuild("../")
+include(":library")
+project(":library").projectDir = file("../library")
