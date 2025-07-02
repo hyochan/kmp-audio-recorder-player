@@ -7,7 +7,7 @@ import platform.Foundation.*
 import platform.AudioToolbox.*
 import kotlinx.cinterop.*
 
-@OptIn(ExperimentalForeignApi::class)
+@OptIn(ExperimentalForeignApi::class, kotlinx.cinterop.BetaInteropApi::class)
 /**
  * iOS implementation of AudioRecorderPlayer using AVAudioRecorder and AVAudioPlayer
  */
@@ -38,8 +38,20 @@ class IOSAudioRecorderPlayer : AudioRecorderPlayer {
             
             // Request microphone permission
             val audioSession = AVAudioSession.sharedInstance()
-            audioSession.setCategory(AVAudioSessionCategoryRecord, error = null)
-            audioSession.setActive(true, error = null)
+            memScoped {
+                val sessionError = alloc<ObjCObjectVar<NSError?>>()
+                sessionError.value = null
+                
+                audioSession.setCategory(AVAudioSessionCategoryRecord, error = sessionError.ptr)
+                if (sessionError.value != null) {
+                    return Result.failure(Exception("Failed to set audio session category: ${sessionError.value?.localizedDescription}"))
+                }
+                
+                audioSession.setActive(true, error = sessionError.ptr)
+                if (sessionError.value != null) {
+                    return Result.failure(Exception("Failed to activate audio session: ${sessionError.value?.localizedDescription}"))
+                }
+            }
             
             val outputURL = filePath?.let { NSURL.fileURLWithPath(it) } 
                 ?: getDefaultRecordingURL()
@@ -95,6 +107,8 @@ class IOSAudioRecorderPlayer : AudioRecorderPlayer {
             
             memScoped {
                 val error = alloc<ObjCObjectVar<NSError?>>()
+                error.value = null
+                
                 val recorder = AVAudioRecorder(outputURL, settings, error.ptr)
                 
                 if (error.value == null && recorder != null) {
@@ -163,11 +177,25 @@ class IOSAudioRecorderPlayer : AudioRecorderPlayer {
             
             // Set audio session for playback
             val audioSession = AVAudioSession.sharedInstance()
-            audioSession.setCategory(AVAudioSessionCategoryPlayback, error = null)
-            audioSession.setActive(true, error = null)
+            memScoped {
+                val sessionError = alloc<ObjCObjectVar<NSError?>>()
+                sessionError.value = null
+                
+                audioSession.setCategory(AVAudioSessionCategoryPlayback, error = sessionError.ptr)
+                if (sessionError.value != null) {
+                    return Result.failure(Exception("Failed to set audio session category: ${sessionError.value?.localizedDescription}"))
+                }
+                
+                audioSession.setActive(true, error = sessionError.ptr)
+                if (sessionError.value != null) {
+                    return Result.failure(Exception("Failed to activate audio session: ${sessionError.value?.localizedDescription}"))
+                }
+            }
             
             memScoped {
                 val error = alloc<ObjCObjectVar<NSError?>>()
+                error.value = null
+                
                 val player = AVAudioPlayer(fileURL, error.ptr)
                 
                 if (error.value == null && player != null) {

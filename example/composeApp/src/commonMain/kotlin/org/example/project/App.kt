@@ -27,7 +27,7 @@ fun App() {
 
 @Composable
 fun AudioRecorderPlayerApp() {
-    val viewModel: AudioViewModel = viewModel()
+    val viewModel: AudioViewModel = viewModel { AudioViewModel() }
     
     // Collect state from ViewModel
     val recordTime by viewModel.recordTime.collectAsState()
