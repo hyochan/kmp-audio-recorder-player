@@ -270,8 +270,43 @@ class IOSAudioRecorderPlayer : AudioRecorderPlayer {
     
     override suspend fun getRecordingInfo(): Result<RecordingInfo?> {
         return try {
-            // iOS implementation - return null for now (stub)
-            Result.success(null)
+            val fileURL = lastRecordedFileURL ?: return Result.success(null)
+            
+            // Get file attributes to calculate size and duration
+            val fileManager = NSFileManager.defaultManager()
+            memScoped {
+                val error = alloc<ObjCObjectVar<NSError?>>()
+                error.value = null
+                
+                val fileAttributes = fileManager.attributesOfItemAtPath(fileURL.path ?: "", error = error.ptr)
+                if (error.value != null) {
+                    return Result.failure(Exception("Failed to get file attributes: ${error.value?.localizedDescription}"))
+                }
+                
+                val fileSize = fileAttributes?.get(NSFileSize) as? NSNumber
+                val fileSizeBytes = fileSize?.longLongValue ?: 0L
+                
+                // Get audio duration using AVAudioPlayer
+                val playerError = alloc<ObjCObjectVar<NSError?>>()
+                playerError.value = null
+                
+                val tempPlayer = AVAudioPlayer(fileURL, playerError.ptr)
+                val duration = if (playerError.value == null && tempPlayer != null) {
+                    (tempPlayer.duration * 1000).toLong() // Convert to milliseconds
+                } else {
+                    0L
+                }
+                
+                Result.success(
+                    RecordingInfo(
+                        filePath = fileURL.path ?: "",
+                        duration = duration,
+                        fileSize = fileSizeBytes,
+                        formattedDuration = formatTime(duration),
+                        formattedFileSize = formatFileSize(fileSizeBytes)
+                    )
+                )
+            }
         } catch (e: Exception) {
             Result.failure(e)
         }
@@ -392,6 +427,20 @@ class IOSAudioRecorderPlayer : AudioRecorderPlayer {
         val centisecondsStr = if (centiseconds < 10) "0$centiseconds" else "$centiseconds"
         
         return "$minutesStr:$secondsStr:$centisecondsStr"
+    }
+    
+    private fun formatFileSize(bytes: Long): String {
+        return when {
+            bytes >= 1024 * 1024 -> {
+                val mbValue = bytes / (1024.0 * 1024.0)
+                NSString.stringWithFormat("%.1f MB", mbValue) as String
+            }
+            bytes >= 1024 -> {
+                val kbValue = bytes / 1024.0
+                NSString.stringWithFormat("%.1f KB", kbValue) as String
+            }
+            else -> "$bytes B"
+        }
     }
 }
 
