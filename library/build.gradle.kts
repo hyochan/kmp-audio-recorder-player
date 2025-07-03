@@ -60,8 +60,8 @@ android {
 mavenPublishing {
     publishToMavenCentral(com.vanniktech.maven.publish.SonatypeHost.CENTRAL_PORTAL)
     
-    // Enable signing for Maven Central
-    signAllPublications()
+    // Disable signing for testing (Maven Central requires signing for production)
+    // signAllPublications()
     
     coordinates("io.github.hyochan", "kmp-audio-recorder-player", "1.0.0-alpha01")
     

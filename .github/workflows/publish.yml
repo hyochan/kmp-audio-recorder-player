@@ -29,8 +29,6 @@ jobs:
 
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v3
-        with:
-          gradle-home-cache-cleanup: true
 
       - name: Set version from input
         if: github.event_name == 'workflow_dispatch'
@@ -55,6 +53,10 @@ jobs:
         env:
           ORG_GRADLE_PROJECT_mavenCentralUsername: ${{ secrets.MAVEN_CENTRAL_USERNAME }}
           ORG_GRADLE_PROJECT_mavenCentralPassword: ${{ secrets.MAVEN_CENTRAL_PASSWORD }}
-          ORG_GRADLE_PROJECT_signingInMemoryKeyId: ${{ secrets.SIGNING_KEY_ID }}
-          ORG_GRADLE_PROJECT_signingInMemoryKey: ${{ secrets.GPG_KEY_CONTENTS }}
-          # ORG_GRADLE_PROJECT_signingInMemoryKeyPassword: ${{ secrets.SIGNING_PASSWORD }}
+
+      - name: Publishing Success
+        if: github.event.inputs.dry_run != 'true'
+        run: |
+          echo "✅ Successfully published to Maven Central!"
+          echo "Library: io.github.hyochan:kmp-audio-recorder-player:${{ github.event.inputs.version || 'from release tag' }}"
+          echo "Check: https://central.sonatype.com/artifact/io.github.hyochan/kmp-audio-recorder-player"
