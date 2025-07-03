@@ -39,6 +39,44 @@ jobs:
       - name: Build library
         run: ./gradlew :library:build --no-configuration-cache
 
+      - name: Test GPG Environment Setup
+        if: github.event.inputs.dry_run != 'true'
+        run: |
+          echo "=== Testing GPG Environment Setup ==="
+          echo "SIGNING_KEY_ID: ${{ secrets.SIGNING_KEY_ID }}"
+          echo "SIGNING_PASSWORD: $([ -n '${{ secrets.SIGNING_PASSWORD }}' ] && echo 'present' || echo 'missing')"
+          echo "MAVEN_CENTRAL_USERNAME: ${{ secrets.MAVEN_CENTRAL_USERNAME }}"
+          echo "MAVEN_CENTRAL_PASSWORD: $([ -n '${{ secrets.MAVEN_CENTRAL_PASSWORD }}' ] && echo 'present' || echo 'missing')"
+          echo "GPG_KEY_CONTENTS: $([ -n '${{ secrets.GPG_KEY_CONTENTS }}' ] && echo 'present' || echo 'missing')"
+
+      - name: Create GPG key file for signing
+        if: github.event.inputs.dry_run != 'true'
+        run: |
+          echo "Creating GPG key file..."
+          echo "${{ secrets.GPG_KEY_CONTENTS }}" > gpg_key_content.gpg
+          echo "GPG key file created successfully"
+          # Debug: Check file was created
+          if [ -f "gpg_key_content.gpg" ]; then
+            echo "✅ GPG key file exists"
+            ls -la gpg_key_content.gpg
+          else
+            echo "❌ GPG key file not found"
+            exit 1
+          fi
+
+      - name: Verify Gradle GPG Properties
+        if: github.event.inputs.dry_run != 'true'
+        run: |
+          echo "=== Verifying Gradle GPG Properties ==="
+          ./gradlew :library:properties --no-configuration-cache | grep -E "(DEBUG|signing)" || echo "No debug output found in properties"
+        env:
+          ORG_GRADLE_PROJECT_mavenCentralUsername: ${{ secrets.MAVEN_CENTRAL_USERNAME }}
+          ORG_GRADLE_PROJECT_mavenCentralPassword: ${{ secrets.MAVEN_CENTRAL_PASSWORD }}
+          ORG_GRADLE_PROJECT_signingInMemoryKeyId: ${{ secrets.SIGNING_KEY_ID }}
+          ORG_GRADLE_PROJECT_signingInMemoryKeyPassword: ${{ secrets.SIGNING_PASSWORD || '' }}
+          ORG_GRADLE_PROJECT_signingInMemoryKey: ${{ secrets.GPG_KEY_CONTENTS }}
+          ORG_GRADLE_PROJECT_signingInMemoryKeyFile: gpg_key_content.gpg
+
       - name: Dry run - Show what would be published
         if: github.event.inputs.dry_run == 'true'
         run: |
@@ -49,10 +87,51 @@ jobs:
 
       - name: Publish to MavenCentral
         if: github.event.inputs.dry_run != 'true'
-        run: ./gradlew publishToMavenCentral --no-configuration-cache
+        run: |
+          echo "=== Starting Maven Central Publishing ==="
+          echo "Running: ./gradlew publishToMavenCentral --no-configuration-cache --info --stacktrace"
+          ./gradlew publishToMavenCentral --no-configuration-cache --info --stacktrace
+        env:
+          # Central Portal credentials (primary)
+          ORG_GRADLE_PROJECT_mavenCentralUsername: ${{ secrets.MAVEN_CENTRAL_USERNAME }}
+          ORG_GRADLE_PROJECT_mavenCentralPassword: ${{ secrets.MAVEN_CENTRAL_PASSWORD }}
+          # Central Portal service configuration
+          ORG_GRADLE_PROJECT_sonatypeRepositoryId: AUTO
+          ORG_GRADLE_PROJECT_sonatypeAutomaticRelease: true
+          # GPG signing
+          ORG_GRADLE_PROJECT_signingInMemoryKeyId: ${{ secrets.SIGNING_KEY_ID }}
+          ORG_GRADLE_PROJECT_signingInMemoryKeyPassword: ${{ secrets.SIGNING_PASSWORD || '' }}
+          ORG_GRADLE_PROJECT_signingInMemoryKey: ${{ secrets.GPG_KEY_CONTENTS }}
+          ORG_GRADLE_PROJECT_signingInMemoryKeyFile: gpg_key_content.gpg
+
+      - name: Debug GPG Signing Failure
+        if: failure() && github.event.inputs.dry_run != 'true'
+        run: |
+          echo "=== GPG Signing Debug Information ==="
+          echo "Checking GPG key file..."
+          if [ -f "gpg_key_content.gpg" ]; then
+            echo "✅ GPG key file exists"
+            echo "File size: $(wc -c < gpg_key_content.gpg) bytes"
+            echo "First 100 chars: $(head -c 100 gpg_key_content.gpg)"
+            echo "Last 100 chars: $(tail -c 100 gpg_key_content.gpg)"
+          else
+            echo "❌ GPG key file not found"
+          fi
+          
+          echo "Environment variables:"
+          echo "SIGNING_KEY_ID: ${{ secrets.SIGNING_KEY_ID }}"
+          echo "GPG_KEY_CONTENTS length: ${#GPG_KEY_CONTENTS}"
+          
+          echo "Running simple signing test..."
+          ./gradlew :library:signAndroidReleasePublication --no-configuration-cache --info --stacktrace || true
         env:
           ORG_GRADLE_PROJECT_mavenCentralUsername: ${{ secrets.MAVEN_CENTRAL_USERNAME }}
           ORG_GRADLE_PROJECT_mavenCentralPassword: ${{ secrets.MAVEN_CENTRAL_PASSWORD }}
+          ORG_GRADLE_PROJECT_signingInMemoryKeyId: ${{ secrets.SIGNING_KEY_ID }}
+          ORG_GRADLE_PROJECT_signingInMemoryKeyPassword: ${{ secrets.SIGNING_PASSWORD || '' }}
+          ORG_GRADLE_PROJECT_signingInMemoryKey: ${{ secrets.GPG_KEY_CONTENTS }}
+          ORG_GRADLE_PROJECT_signingInMemoryKeyFile: gpg_key_content.gpg
+          GPG_KEY_CONTENTS: ${{ secrets.GPG_KEY_CONTENTS }}
 
       - name: Publishing Success
         if: github.event.inputs.dry_run != 'true'
@@ -60,3 +139,12 @@ jobs:
           echo "✅ Successfully published to Maven Central!"
           echo "Library: io.github.hyochan:kmp-audio-recorder-player:${{ github.event.inputs.version || 'from release tag' }}"
           echo "Check: https://central.sonatype.com/artifact/io.github.hyochan/kmp-audio-recorder-player"
+
+      - name: Clean up GPG key file
+        if: always() && github.event.inputs.dry_run != 'true'
+        run: |
+          if [ -f "gpg_key_content.gpg" ]; then
+            echo "Cleaning up GPG key file..."
+            rm -f gpg_key_content.gpg
+            echo "GPG key file removed"
+          fi

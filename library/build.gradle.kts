@@ -1,10 +1,110 @@
 import org.jetbrains.kotlin.gradle.ExperimentalKotlinGradlePluginApi
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
+import java.util.Properties
+
+// Load local.properties
+val localProperties = Properties()
+val localPropertiesFile = rootProject.file("local.properties")
+if (localPropertiesFile.exists()) {
+    localProperties.load(localPropertiesFile.inputStream())
+}
+
+// Load environment variables first (for CI)
+System.getenv().forEach { (key, value) ->
+    if (key.startsWith("ORG_GRADLE_PROJECT_")) {
+        val propertyKey = key.removePrefix("ORG_GRADLE_PROJECT_")
+        localProperties.setProperty(propertyKey, value)
+        project.extensions.extraProperties.set(propertyKey, value)
+        println("DEBUG: Loaded from env: $propertyKey = ${if (propertyKey.contains("Password") || propertyKey.contains("Key")) "***" else value}")
+    }
+}
+
+// Handle GPG key from environment variable or file (environment takes precedence)
+val envGpgKey = System.getenv("ORG_GRADLE_PROJECT_signingInMemoryKey")
+if (envGpgKey != null) {
+    // Clean up the key - remove any extra whitespace or newlines
+    val cleanedKey = envGpgKey.trim()
+    localProperties.setProperty("signingInMemoryKey", cleanedKey)
+    project.extensions.extraProperties.set("signingInMemoryKey", cleanedKey)
+    println("DEBUG: Loaded GPG key from environment variable (${cleanedKey.length} characters)")
+    println("DEBUG: GPG key starts with: ${cleanedKey.take(50)}...")
+    println("DEBUG: GPG key ends with: ...${cleanedKey.takeLast(50)}")
+} else {
+    // Read GPG key from file if signingInMemoryKeyFile is specified
+    val keyFile = localProperties.getProperty("signingInMemoryKeyFile")
+    if (keyFile != null) {
+        val keyFileHandle = rootProject.file(keyFile)
+        if (keyFileHandle.exists()) {
+            val keyContent = keyFileHandle.readText().trim()
+            localProperties.setProperty("signingInMemoryKey", keyContent)
+            project.extensions.extraProperties.set("signingInMemoryKey", keyContent)
+            println("DEBUG: Loaded GPG key from file: $keyFile (${keyContent.length} characters)")
+            println("DEBUG: GPG key starts with: ${keyContent.take(50)}...")
+        } else {
+            println("DEBUG: GPG key file not found: $keyFile")
+        }
+    }
+}
+
+// Add local properties to project properties
+localProperties.forEach { key, value ->
+    // Set as project extra properties
+    project.extra.set(key.toString(), value)
+    
+    // For vanniktech plugin, also set as system properties
+    if (key.toString().startsWith("maven") || key.toString().startsWith("central") || key.toString().startsWith("signing")) {
+        System.setProperty(key.toString(), value.toString())
+        println("DEBUG: Set system property $key = ${if (key.toString().contains("Password") || key.toString().contains("Key")) "***" else value}")
+    }
+}
+
+// Ensure critical properties are available as both project and system properties
+val criticalProperties = listOf(
+    "mavenCentralUsername",
+    "mavenCentralPassword", 
+    "sonatypeRepositoryId",
+    "sonatypeAutomaticRelease",
+    "signingInMemoryKeyId",
+    "signingInMemoryKey",
+    "signingInMemoryKeyPassword"
+)
+
+criticalProperties.forEach { propName ->
+    val value = localProperties.getProperty(propName) ?: project.findProperty(propName) as String?
+    if (value != null) {
+        project.extra.set(propName, value)
+        System.setProperty(propName, value)
+        println("DEBUG: Ensured $propName is available as both project and system property")
+    }
+}
+
+// Debug logging (can be removed once publishing is stable)
+println("DEBUG: Final property values:")
+println("DEBUG: signingInMemoryKeyId = ${project.findProperty("signingInMemoryKeyId")}")
+println("DEBUG: signingInMemoryKey present = ${project.findProperty("signingInMemoryKey") != null}")
+println("DEBUG: signingInMemoryKeyPassword present = ${project.findProperty("signingInMemoryKeyPassword") != null}")
+println("DEBUG: mavenCentralUsername = ${project.findProperty("mavenCentralUsername")}")
+println("DEBUG: mavenCentralPassword present = ${project.findProperty("mavenCentralPassword") != null}")
+
+// Additional GPG signing verification
+val signingKeyId = project.findProperty("signingInMemoryKeyId") as String?
+val signingKey = project.findProperty("signingInMemoryKey") as String?
+val signingPassword = project.findProperty("signingInMemoryKeyPassword") as String?
+
+if (signingKeyId != null && signingKey != null && signingPassword != null) {
+    println("DEBUG: ✅ All GPG signing properties are present")
+} else {
+    println("DEBUG: ❌ Missing GPG signing properties:")
+    if (signingKeyId == null) println("DEBUG: - signingInMemoryKeyId is null")
+    if (signingKey == null) println("DEBUG: - signingInMemoryKey is null")
+    if (signingPassword == null) println("DEBUG: - signingInMemoryKeyPassword is null")
+}
 
 plugins {
     alias(libs.plugins.kotlinMultiplatform)
     alias(libs.plugins.androidLibrary)
     alias(libs.plugins.vanniktechMavenPublish)
+    alias(libs.plugins.dokka)
     signing
 }
 
@@ -58,12 +158,21 @@ android {
 }
 
 mavenPublishing {
+    // Explicitly use Central Portal since the credentials are for that system
     publishToMavenCentral(com.vanniktech.maven.publish.SonatypeHost.CENTRAL_PORTAL)
     
-    // Disable signing for testing (Maven Central requires signing for production)
-    // signAllPublications()
+    // Re-enable vanniktech signing to use its built-in signing mechanism
+    signAllPublications()
     
     coordinates("io.github.hyochan", "kmp-audio-recorder-player", "1.0.0-alpha01")
+    
+    // Configure publications with empty Javadoc JAR (acceptable for alpha releases)
+    configure(
+        com.vanniktech.maven.publish.KotlinMultiplatform(
+            javadocJar = com.vanniktech.maven.publish.JavadocJar.Empty(),
+            sourcesJar = true,
+        )
+    )
     
     pom {
         name.set("KMP Audio Recorder Player")
@@ -75,7 +184,7 @@ mavenPublishing {
             license {
                 name.set("MIT License")
                 url.set("https://opensource.org/licenses/MIT")
-                distribution.set("https://opensource.org/licenses/MIT")
+                distribution.set("repo")
             }
         }
         
@@ -83,7 +192,10 @@ mavenPublishing {
             developer {
                 id.set("hyochan")
                 name.set("Hyo Chan Jang")
+                email.set("hyo@hyo.dev")
                 url.set("https://github.com/hyochan/")
+                organization.set("hyochan")
+                organizationUrl.set("https://github.com/hyochan")
             }
         }
         
@@ -91,6 +203,36 @@ mavenPublishing {
             url.set("https://github.com/hyochan/kmp-audio-recorder-player")
             connection.set("scm:git:git://github.com/hyochan/kmp-audio-recorder-player.git")
             developerConnection.set("scm:git:ssh://git@github.com/hyochan/kmp-audio-recorder-player.git")
+            tag.set("HEAD")
+        }
+        
+        issueManagement {
+            system.set("GitHub")
+            url.set("https://github.com/hyochan/kmp-audio-recorder-player/issues")
         }
     }
 }
+
+// Manual signing configuration (disabled in favor of vanniktech signing)
+/*
+signing {
+    val signingKeyId: String? by project
+    val signingPassword: String? by project
+    
+    // Try to read signing key from file if not available in properties
+    val signingKey: String? = project.findProperty("signingKey") as String? ?: 
+        rootProject.file("temp_private_key.asc").takeIf { it.exists() }?.readText()
+    
+    println("DEBUG: signingKeyId = ${signingKeyId?.substring(0, 8)}...")
+    println("DEBUG: signingKey present = ${signingKey != null}")
+    println("DEBUG: signingPassword present = ${signingPassword != null}")
+    
+    if (signingKeyId != null && signingKey != null) {
+        println("DEBUG: Configuring in-memory PGP keys for signing")
+        useInMemoryPgpKeys(signingKeyId, signingKey, signingPassword)
+        sign(publishing.publications)
+    } else {
+        println("DEBUG: Signing disabled - missing required properties")
+    }
+}
+*/
