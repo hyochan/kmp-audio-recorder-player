@@ -11,3 +11,13 @@ xcuserdata
 .kotlin
 #So we don't accidentally commit our private keys
 *.gpg
+*.asc
+gpg-key-spec
+private-key*
+public-key*
+temp_*
+*_backup.*
+key.*
+deploy.md
+PUBLISHING.md
+gpg_key_escaped.txt
