@@ -1,0 +1,35 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Android Debug (Auto)",
+      "request": "launch",
+      "type": "node-terminal",
+      "command": "${workspaceFolder}/.vscode/run_android.sh",
+      "cwd": "${workspaceFolder}"
+    },
+    {
+      "name": "Android Debug",
+      "request": "launch",
+      "type": "node-terminal",
+      "command": "${workspaceFolder}/.vscode/run_android.sh",
+      "cwd": "${workspaceFolder}"
+    },
+    {
+      "name": "iOS Simulator",
+      "request": "launch",
+      "type": "node-terminal",
+      "command": "${workspaceFolder}/.vscode/run_ios.sh",
+      "cwd": "${workspaceFolder}"
+    },
+    {
+      "name": "Desktop Debug",
+      "type": "node",
+      "request": "launch",
+      "program": "${workspaceFolder}/example/gradlew",
+      "args": ["composeApp:run"],
+      "cwd": "${workspaceFolder}/example",
+      "console": "integratedTerminal"
+    }
+  ]
+}
