@@ -56,7 +56,8 @@ val criticalProperties = listOf(
     "sonatypeAutomaticRelease",
     "signingInMemoryKeyId",
     "signingInMemoryKey",
-    "signingInMemoryKeyPassword"
+    "signingInMemoryKeyPassword",
+    "libraryVersion"
 )
 
 criticalProperties.forEach { propName ->
@@ -76,7 +77,7 @@ plugins {
 }
 
 group = "io.github.hyochan"
-version = "1.0.0-alpha02"
+version = localProperties.getProperty("libraryVersion") ?: "1.0.0-alpha02"
 
 kotlin {
     jvm()
@@ -131,7 +132,7 @@ mavenPublishing {
     // Re-enable vanniktech signing to use its built-in signing mechanism
     signAllPublications()
     
-    coordinates("io.github.hyochan", "kmp-audio-recorder-player", "1.0.0-alpha02")
+    coordinates("io.github.hyochan", "kmp-audio-recorder-player", localProperties.getProperty("libraryVersion") ?: "1.0.0-alpha02")
     
     // Configure publications with empty Javadoc JAR (Maven Central compatible)
     configure(
@@ -170,7 +171,7 @@ mavenPublishing {
             connection.set("scm:git:git://github.com/hyochan/kmp-audio-recorder-player.git")
             developerConnection.set("scm:git:ssh://git@github.com/hyochan/kmp-audio-recorder-player.git")
             url.set("https://github.com/hyochan/kmp-audio-recorder-player")
-            tag.set("v1.0.0-alpha02")
+            tag.set("v${localProperties.getProperty("libraryVersion") ?: "1.0.0-alpha02"}")
         }
         
         issueManagement {

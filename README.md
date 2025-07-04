@@ -55,32 +55,7 @@ This project uses VS Code with predefined tasks for development:
 
 - **Check Publishing Tasks**: View all available publishing-related Gradle tasks
 
-## 📦 Publishing
-
-This library is automatically published to Maven Central via GitHub Actions. **No local publishing required.**
-
-### Release Process
-
-1. **Update Version**: Update the version in `library/build.gradle.kts`
-2. **Create Release**: Go to GitHub → Releases → "Draft a new release"
-3. **Set Tag**: Create a new tag (e.g., `v1.0.0-alpha02`)
-4. **Publish**: Click "Publish release"
-
-The GitHub Actions workflow will automatically:
-
-- Build the library for all platforms
-- Sign the artifacts with GPG
-- Upload to Maven Central
-- Handle the publication process
-
-### Manual Trigger
-
-You can also trigger publishing manually via GitHub Actions:
-
-- Go to Actions → "Publish" workflow → "Run workflow"
-- Choose version and dry-run options
-
-## 🔧 Configuration
+## Configuration
 
 No additional configuration required! The library works out of the box on all supported platforms.
 
@@ -102,18 +77,9 @@ Found a bug or have a feature request? Please create an issue on [GitHub](https:
 
 ### Prerequisites
 
-- Maven Central account with verified namespace (`io.github.hyochan`)
-- GPG key for signing artifacts
-- GitHub repository with proper secrets configuration
-
-### Required GitHub Secrets
-
-Configure these secrets in your GitHub repository (Settings → Secrets and variables → Actions):
-
-- `MAVEN_CENTRAL_USERNAME`: Your Maven Central username
-- `MAVEN_CENTRAL_PASSWORD`: Your Maven Central password/token
-- `SIGNING_KEY_ID`: Your GPG key ID (last 8 characters)
-- `GPG_KEY_CONTENTS`: Your complete GPG private key
+- Kotlin Multiplatform development environment
+- Android Studio or VS Code with Kotlin support
+- For iOS development: Xcode on macOS
 
 ### Local Development
 
@@ -122,13 +88,29 @@ Configure these secrets in your GitHub repository (Settings → Secrets and vari
 3. **Build**: Use VS Code tasks or run `./gradlew :library:build`
 4. **Test**: Run `./gradlew :library:test`
 
-### Release Process
-
-Publishing is handled entirely through GitHub Actions:
-
-1. Update version in `library/build.gradle.kts`
-2. Create a GitHub release with appropriate tag
-3. GitHub Actions automatically publishes to Maven Central
-4. Monitor the workflow in the Actions tab
-
 For detailed setup instructions, see the [Kotlin Multiplatform Library Template](https://github.com/Kotlin/multiplatform-library-template) documentation.
+
+---
+
+## Publishing
+
+> **Note**: GitHub Actions CI publishing is currently experiencing issues. Local publishing is the recommended approach.
+
+### Local Publishing
+
+To publish the library to Maven Central locally:
+
+1. **Prerequisites**: Make sure you have `local.properties` and `gpg_key_content.gpg` files configured
+2. **Run the script**:
+   ```bash
+   ./publish-local.sh
+   ```
+
+The script will automatically:
+
+- Clean the build
+- Build all platform artifacts
+- Sign with GPG
+- Upload to Maven Central
+
+Check the deployment status at [Maven Central Portal](https://central.sonatype.com/publishing/deployments).
