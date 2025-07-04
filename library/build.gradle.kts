@@ -15,20 +15,15 @@ System.getenv().forEach { (key, value) ->
         val propertyKey = key.removePrefix("ORG_GRADLE_PROJECT_")
         localProperties.setProperty(propertyKey, value)
         project.extensions.extraProperties.set(propertyKey, value)
-        println("DEBUG: Loaded from env: $propertyKey = ${if (propertyKey.contains("Password") || propertyKey.contains("Key")) "***" else value}")
     }
 }
 
 // Handle GPG key from environment variable or file (environment takes precedence)
 val envGpgKey = System.getenv("ORG_GRADLE_PROJECT_signingInMemoryKey")
 if (envGpgKey != null) {
-    // Clean up the key - remove any extra whitespace or newlines
     val cleanedKey = envGpgKey.trim()
     localProperties.setProperty("signingInMemoryKey", cleanedKey)
     project.extensions.extraProperties.set("signingInMemoryKey", cleanedKey)
-    println("DEBUG: Loaded GPG key from environment variable (${cleanedKey.length} characters)")
-    println("DEBUG: GPG key starts with: ${cleanedKey.take(50)}...")
-    println("DEBUG: GPG key ends with: ...${cleanedKey.takeLast(50)}")
 } else {
     // Read GPG key from file if signingInMemoryKeyFile is specified
     val keyFile = localProperties.getProperty("signingInMemoryKeyFile")
@@ -38,10 +33,6 @@ if (envGpgKey != null) {
             val keyContent = keyFileHandle.readText().trim()
             localProperties.setProperty("signingInMemoryKey", keyContent)
             project.extensions.extraProperties.set("signingInMemoryKey", keyContent)
-            println("DEBUG: Loaded GPG key from file: $keyFile (${keyContent.length} characters)")
-            println("DEBUG: GPG key starts with: ${keyContent.take(50)}...")
-        } else {
-            println("DEBUG: GPG key file not found: $keyFile")
         }
     }
 }
@@ -54,7 +45,6 @@ localProperties.forEach { key, value ->
     // For vanniktech plugin, also set as system properties
     if (key.toString().startsWith("maven") || key.toString().startsWith("central") || key.toString().startsWith("signing")) {
         System.setProperty(key.toString(), value.toString())
-        println("DEBUG: Set system property $key = ${if (key.toString().contains("Password") || key.toString().contains("Key")) "***" else value}")
     }
 }
 
@@ -74,30 +64,7 @@ criticalProperties.forEach { propName ->
     if (value != null) {
         project.extra.set(propName, value)
         System.setProperty(propName, value)
-        println("DEBUG: Ensured $propName is available as both project and system property")
     }
-}
-
-// Debug logging (can be removed once publishing is stable)
-println("DEBUG: Final property values:")
-println("DEBUG: signingInMemoryKeyId = ${project.findProperty("signingInMemoryKeyId")}")
-println("DEBUG: signingInMemoryKey present = ${project.findProperty("signingInMemoryKey") != null}")
-println("DEBUG: signingInMemoryKeyPassword present = ${project.findProperty("signingInMemoryKeyPassword") != null}")
-println("DEBUG: mavenCentralUsername = ${project.findProperty("mavenCentralUsername")}")
-println("DEBUG: mavenCentralPassword present = ${project.findProperty("mavenCentralPassword") != null}")
-
-// Additional GPG signing verification
-val signingKeyId = project.findProperty("signingInMemoryKeyId") as String?
-val signingKey = project.findProperty("signingInMemoryKey") as String?
-val signingPassword = project.findProperty("signingInMemoryKeyPassword") as String?
-
-if (signingKeyId != null && signingKey != null && signingPassword != null) {
-    println("DEBUG: ✅ All GPG signing properties are present")
-} else {
-    println("DEBUG: ❌ Missing GPG signing properties:")
-    if (signingKeyId == null) println("DEBUG: - signingInMemoryKeyId is null")
-    if (signingKey == null) println("DEBUG: - signingInMemoryKey is null")
-    if (signingPassword == null) println("DEBUG: - signingInMemoryKeyPassword is null")
 }
 
 plugins {
@@ -109,7 +76,7 @@ plugins {
 }
 
 group = "io.github.hyochan"
-version = "1.0.0-alpha01"
+version = "1.0.0-alpha02"
 
 kotlin {
     jvm()
@@ -158,15 +125,15 @@ android {
 }
 
 mavenPublishing {
-    // Explicitly use Central Portal since the credentials are for that system
+    // Explicitly use Central Portal instead of legacy Sonatype
     publishToMavenCentral(com.vanniktech.maven.publish.SonatypeHost.CENTRAL_PORTAL)
     
     // Re-enable vanniktech signing to use its built-in signing mechanism
     signAllPublications()
     
-    coordinates("io.github.hyochan", "kmp-audio-recorder-player", "1.0.0-alpha01")
+    coordinates("io.github.hyochan", "kmp-audio-recorder-player", "1.0.0-alpha02")
     
-    // Configure publications with empty Javadoc JAR (acceptable for alpha releases)
+    // Configure publications with empty Javadoc JAR (Maven Central compatible)
     configure(
         com.vanniktech.maven.publish.KotlinMultiplatform(
             javadocJar = com.vanniktech.maven.publish.JavadocJar.Empty(),
@@ -200,10 +167,10 @@ mavenPublishing {
         }
         
         scm {
-            url.set("https://github.com/hyochan/kmp-audio-recorder-player")
             connection.set("scm:git:git://github.com/hyochan/kmp-audio-recorder-player.git")
             developerConnection.set("scm:git:ssh://git@github.com/hyochan/kmp-audio-recorder-player.git")
-            tag.set("HEAD")
+            url.set("https://github.com/hyochan/kmp-audio-recorder-player")
+            tag.set("v1.0.0-alpha02")
         }
         
         issueManagement {
