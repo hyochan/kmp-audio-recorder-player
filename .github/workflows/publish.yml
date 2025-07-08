@@ -5,9 +5,9 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: "Version to publish (e.g., 1.0.0-alpha01)"
+        description: "Version to publish (e.g., 1.0.0-alpha04)"
         required: true
-        default: "1.0.0-alpha01"
+        default: "1.0.0-alpha04"
         type: string
       dry_run:
         description: "Dry run (test without publishing)"
@@ -21,6 +21,7 @@ jobs:
     steps:
       - name: Check out code
         uses: actions/checkout@v4
+      
       - name: Set up JDK 21
         uses: actions/setup-java@v4
         with:
@@ -30,24 +31,28 @@ jobs:
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v3
 
-      - name: Set version from input
-        if: github.event_name == 'workflow_dispatch'
+      - name: Create local.properties with version
         run: |
-          echo "Setting version to ${{ github.event.inputs.version }}"
-          sed -i '' 's/version = ".*"/version = "${{ github.event.inputs.version }}"/' library/build.gradle.kts
-
-      - name: Build library
-        run: ./gradlew :library:build --no-configuration-cache
-
-      - name: Test GPG Environment Setup
-        if: github.event.inputs.dry_run != 'true'
-        run: |
-          echo "=== Testing GPG Environment Setup ==="
-          echo "SIGNING_KEY_ID: ${{ secrets.SIGNING_KEY_ID }}"
-          echo "SIGNING_PASSWORD: $([ -n '${{ secrets.SIGNING_PASSWORD }}' ] && echo 'present' || echo 'missing')"
-          echo "MAVEN_CENTRAL_USERNAME: ${{ secrets.MAVEN_CENTRAL_USERNAME }}"
-          echo "MAVEN_CENTRAL_PASSWORD: $([ -n '${{ secrets.MAVEN_CENTRAL_PASSWORD }}' ] && echo 'present' || echo 'missing')"
-          echo "GPG_KEY_CONTENTS: $([ -n '${{ secrets.GPG_KEY_CONTENTS }}' ] && echo 'present' || echo 'missing')"
+          echo "Creating local.properties with version..."
+          cat > local.properties << EOF
+          # Library version
+          libraryVersion=${{ github.event.inputs.version || github.event.release.tag_name || '1.0.0-alpha04' }}
+          
+          # Central Portal credentials (from secrets)
+          mavenCentralUsername=${{ secrets.MAVEN_CENTRAL_USERNAME }}
+          mavenCentralPassword=${{ secrets.MAVEN_CENTRAL_PASSWORD }}
+          
+          # Central Portal service configuration
+          sonatypeRepositoryId=AUTO
+          sonatypeAutomaticRelease=false
+          
+          # GPG signing
+          signingInMemoryKeyId=${{ secrets.SIGNING_KEY_ID }}
+          signingInMemoryKeyPassword=${{ secrets.SIGNING_PASSWORD || '' }}
+          signingInMemoryKeyFile=gpg_key_content.gpg
+          EOF
+          
+          echo "✅ local.properties created with version: $(grep libraryVersion local.properties | cut -d'=' -f2)"
 
       - name: Create GPG key file for signing
         if: github.event.inputs.dry_run != 'true'
@@ -64,24 +69,25 @@ jobs:
             exit 1
           fi
 
-      - name: Verify Gradle GPG Properties
+      - name: Build library
+        run: ./gradlew :library:build --no-configuration-cache
+
+      - name: Test GPG Environment Setup
         if: github.event.inputs.dry_run != 'true'
         run: |
-          echo "=== Verifying Gradle GPG Properties ==="
-          ./gradlew :library:properties --no-configuration-cache | grep -E "(DEBUG|signing)" || echo "No debug output found in properties"
-        env:
-          ORG_GRADLE_PROJECT_mavenCentralUsername: ${{ secrets.MAVEN_CENTRAL_USERNAME }}
-          ORG_GRADLE_PROJECT_mavenCentralPassword: ${{ secrets.MAVEN_CENTRAL_PASSWORD }}
-          ORG_GRADLE_PROJECT_signingInMemoryKeyId: ${{ secrets.SIGNING_KEY_ID }}
-          ORG_GRADLE_PROJECT_signingInMemoryKeyPassword: ${{ secrets.SIGNING_PASSWORD || '' }}
-          ORG_GRADLE_PROJECT_signingInMemoryKey: ${{ secrets.GPG_KEY_CONTENTS }}
-          ORG_GRADLE_PROJECT_signingInMemoryKeyFile: gpg_key_content.gpg
+          echo "=== Testing GPG Environment Setup ==="
+          echo "Library version: $(grep libraryVersion local.properties | cut -d'=' -f2)"
+          echo "SIGNING_KEY_ID: ${{ secrets.SIGNING_KEY_ID }}"
+          echo "SIGNING_PASSWORD: $([ -n '${{ secrets.SIGNING_PASSWORD }}' ] && echo 'present' || echo 'missing')"
+          echo "MAVEN_CENTRAL_USERNAME: ${{ secrets.MAVEN_CENTRAL_USERNAME }}"
+          echo "MAVEN_CENTRAL_PASSWORD: $([ -n '${{ secrets.MAVEN_CENTRAL_PASSWORD }}' ] && echo 'present' || echo 'missing')"
+          echo "GPG_KEY_CONTENTS: $([ -n '${{ secrets.GPG_KEY_CONTENTS }}' ] && echo 'present' || echo 'missing')"
 
       - name: Dry run - Show what would be published
         if: github.event.inputs.dry_run == 'true'
         run: |
           echo "=== DRY RUN - No actual publishing ==="
-          echo "Version: ${{ github.event.inputs.version || 'from release tag' }}"
+          echo "Version: $(grep libraryVersion local.properties | cut -d'=' -f2)"
           echo "Library artifacts would be published to Maven Central"
           ./gradlew :library:tasks --group=publishing
 
@@ -89,68 +95,76 @@ jobs:
         if: github.event.inputs.dry_run != 'true'
         run: |
           echo "=== Starting Maven Central Publishing ==="
-          echo "Running: ./gradlew publishToMavenCentral --no-configuration-cache --info --stacktrace"
-          # The plugin may fail at cleanup but publishing should still work
-          # We'll ignore the service cleanup error since all artifacts are published successfully
-          ./gradlew publishToMavenCentral --no-configuration-cache --info --stacktrace || {
-            echo "Build may have failed due to service cleanup issue - checking if artifacts were published..."
+          
+          # Export environment variables (same as local script)
+          export ORG_GRADLE_PROJECT_mavenCentralUsername="${{ secrets.MAVEN_CENTRAL_USERNAME }}"
+          export ORG_GRADLE_PROJECT_mavenCentralPassword="${{ secrets.MAVEN_CENTRAL_PASSWORD }}"
+          export ORG_GRADLE_PROJECT_signingInMemoryKeyId="${{ secrets.SIGNING_KEY_ID }}"
+          export ORG_GRADLE_PROJECT_signingInMemoryKeyPassword="${{ secrets.SIGNING_PASSWORD || '' }}"
+          export ORG_GRADLE_PROJECT_signingInMemoryKeyFile="gpg_key_content.gpg"
+          export ORG_GRADLE_PROJECT_sonatypeRepositoryId="AUTO"
+          export ORG_GRADLE_PROJECT_sonatypeAutomaticRelease="false"
+          
+          echo "Running: ./gradlew publishToMavenCentral --no-configuration-cache --info"
+          
+          # Run the same command as local script
+          ./gradlew publishToMavenCentral --no-configuration-cache --info || {
             exit_code=$?
-            if [ $exit_code -eq 1 ] && grep -q "Failed to stop service 'sonatype-repository-build-service'" build.log 2>/dev/null; then
-              echo "✅ Publishing completed successfully (service cleanup error ignored)"
-              exit 0
+            echo "Build exited with code: $exit_code"
+            
+            # Check for known service cleanup error that can be ignored
+            if [ $exit_code -eq 1 ]; then
+              echo "⚠️  Build failed with exit code 1 - checking for known issues..."
+              # Even if it fails, check if the artifacts were actually published
+              echo "Check Maven Central for the artifacts: https://central.sonatype.com/artifact/io.github.hyochan/kmp-audio-recorder-player"
+              # For now, we'll fail the build to see the actual error
+              exit $exit_code
             else
-              echo "❌ Real publishing error occurred"
               exit $exit_code
             fi
           }
-        env:
-          # Central Portal credentials (primary)
-          ORG_GRADLE_PROJECT_mavenCentralUsername: ${{ secrets.MAVEN_CENTRAL_USERNAME }}
-          ORG_GRADLE_PROJECT_mavenCentralPassword: ${{ secrets.MAVEN_CENTRAL_PASSWORD }}
-          # Central Portal service configuration - disable auto release to avoid service errors
-          ORG_GRADLE_PROJECT_sonatypeRepositoryId: AUTO
-          ORG_GRADLE_PROJECT_sonatypeAutomaticRelease: false
-          # GPG signing
-          ORG_GRADLE_PROJECT_signingInMemoryKeyId: ${{ secrets.SIGNING_KEY_ID }}
-          ORG_GRADLE_PROJECT_signingInMemoryKeyPassword: ${{ secrets.SIGNING_PASSWORD || '' }}
-          ORG_GRADLE_PROJECT_signingInMemoryKey: ${{ secrets.GPG_KEY_CONTENTS }}
-          ORG_GRADLE_PROJECT_signingInMemoryKeyFile: gpg_key_content.gpg
 
-      - name: Debug GPG Signing Failure
-        if: failure() && github.event.inputs.dry_run != 'true'
+      - name: Update README version
+        if: github.event.inputs.dry_run != 'true' && success()
         run: |
-          echo "=== GPG Signing Debug Information ==="
-          echo "Checking GPG key file..."
-          if [ -f "gpg_key_content.gpg" ]; then
-            echo "✅ GPG key file exists"
-            echo "File size: $(wc -c < gpg_key_content.gpg) bytes"
-            echo "First 100 chars: $(head -c 100 gpg_key_content.gpg)"
-            echo "Last 100 chars: $(tail -c 100 gpg_key_content.gpg)"
+          echo "Updating README.md with published version..."
+          ./gradlew :library:updateReadmeVersion
+          
+          # Commit and push if README was changed
+          if git diff --quiet README.md; then
+            echo "README.md is already up to date"
           else
-            echo "❌ GPG key file not found"
+            git config --local user.email "github-actions[bot]@users.noreply.github.com"
+            git config --local user.name "github-actions[bot]"
+            git add README.md
+            git commit -m "chore: update README.md version to $(grep libraryVersion local.properties | cut -d'=' -f2)"
+            git push
           fi
-          
-          echo "Environment variables:"
-          echo "SIGNING_KEY_ID: ${{ secrets.SIGNING_KEY_ID }}"
-          echo "GPG_KEY_CONTENTS length: ${#GPG_KEY_CONTENTS}"
-          
-          echo "Running simple signing test..."
-          ./gradlew :library:signAndroidReleasePublication --no-configuration-cache --info --stacktrace || true
-        env:
-          ORG_GRADLE_PROJECT_mavenCentralUsername: ${{ secrets.MAVEN_CENTRAL_USERNAME }}
-          ORG_GRADLE_PROJECT_mavenCentralPassword: ${{ secrets.MAVEN_CENTRAL_PASSWORD }}
-          ORG_GRADLE_PROJECT_signingInMemoryKeyId: ${{ secrets.SIGNING_KEY_ID }}
-          ORG_GRADLE_PROJECT_signingInMemoryKeyPassword: ${{ secrets.SIGNING_PASSWORD || '' }}
-          ORG_GRADLE_PROJECT_signingInMemoryKey: ${{ secrets.GPG_KEY_CONTENTS }}
-          ORG_GRADLE_PROJECT_signingInMemoryKeyFile: gpg_key_content.gpg
-          GPG_KEY_CONTENTS: ${{ secrets.GPG_KEY_CONTENTS }}
 
       - name: Publishing Success
-        if: github.event.inputs.dry_run != 'true'
+        if: github.event.inputs.dry_run != 'true' && success()
         run: |
+          VERSION=$(grep libraryVersion local.properties | cut -d'=' -f2)
           echo "✅ Successfully published to Maven Central!"
-          echo "Library: io.github.hyochan:kmp-audio-recorder-player:${{ github.event.inputs.version || 'from release tag' }}"
+          echo "Library: io.github.hyochan:kmp-audio-recorder-player:$VERSION"
           echo "Check: https://central.sonatype.com/artifact/io.github.hyochan/kmp-audio-recorder-player"
+
+      - name: Debug on Failure
+        if: failure() && github.event.inputs.dry_run != 'true'
+        run: |
+          echo "=== Debug Information ==="
+          echo "Current directory: $(pwd)"
+          echo "Files in directory:"
+          ls -la
+          echo ""
+          echo "local.properties content:"
+          cat local.properties || echo "local.properties not found"
+          echo ""
+          echo "GPG key file:"
+          ls -la gpg_key_content.gpg || echo "GPG key file not found"
+          echo ""
+          echo "Gradle properties:"
+          ./gradlew :library:properties | grep -E "(signing|maven|central)" || echo "Could not get properties"
 
       - name: Clean up GPG key file
         if: always() && github.event.inputs.dry_run != 'true'
