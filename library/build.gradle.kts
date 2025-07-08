@@ -125,6 +125,26 @@ android {
     }
 }
 
+// Task to update README version
+val updateReadmeVersion = tasks.register("updateReadmeVersion") {
+    doLast {
+        val version = localProperties.getProperty("libraryVersion") ?: "1.0.0-alpha04"
+        val readmeFile = rootProject.file("README.md")
+        val content = readmeFile.readText()
+        val updatedContent = content.replace(
+            Regex("implementation\\(\"io\\.github\\.hyochan:kmp-audio-recorder-player:.*\"\\)"),
+            "implementation(\"io.github.hyochan:kmp-audio-recorder-player:$version\")"
+        )
+        readmeFile.writeText(updatedContent)
+        println("Updated README.md with version: $version")
+    }
+}
+
+// Automatically update README when publishing
+tasks.withType<PublishToMavenRepository> {
+    dependsOn(updateReadmeVersion)
+}
+
 mavenPublishing {
     // Explicitly use Central Portal instead of legacy Sonatype
     publishToMavenCentral(com.vanniktech.maven.publish.SonatypeHost.CENTRAL_PORTAL)

@@ -23,7 +23,7 @@ Add the library to your `build.gradle.kts`:
 
 ```kotlin
 dependencies {
-    implementation("io.github.hyochan:kmp-audio-recorder-player:1.0.0-alpha01")
+    implementation("io.github.hyochan:kmp-audio-recorder-player:1.0.0-alpha04")
 }
 ```
 
