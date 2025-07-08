@@ -15,3 +15,4 @@ dependencyResolutionManagement {
 
 rootProject.name = "multiplatform-library-template"
 include(":library")
+include(":example:composeApp")

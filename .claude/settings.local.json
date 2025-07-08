@@ -1,0 +1,13 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(./gradlew:*)",
+      "Bash(ls:*)",
+      "Bash(adb:*)",
+      "Bash(find:*)",
+      "Bash(xcodebuild:*)",
+      "Bash(rg:*)"
+    ],
+    "deny": []
+  }
+}

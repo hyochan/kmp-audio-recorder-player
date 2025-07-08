@@ -3,6 +3,7 @@ package io.github.hyochan.audio
 import kotlinx.coroutines.*
 import kotlinx.datetime.Clock
 import platform.AVFAudio.*
+import platform.AVFoundation.*
 import platform.Foundation.*
 import platform.AudioToolbox.*
 import kotlinx.cinterop.*
@@ -18,8 +19,10 @@ class IOSAudioRecorderPlayer : AudioRecorderPlayer {
     
     private var recordingListener: ((RecordingProgress) -> Unit)? = null
     private var playbackListener: ((PlaybackProgress) -> Unit)? = null
+    private var audioMeteringListener: ((AudioMeteringInfo) -> Unit)? = null
     private var recordingJob: Job? = null
     private var playbackJob: Job? = null
+    private var meteringJob: Job? = null
     
     private var isRecording = false
     private var isPlaying = false
@@ -113,6 +116,11 @@ class IOSAudioRecorderPlayer : AudioRecorderPlayer {
                 
                 if (error.value == null && recorder != null) {
                     if (recorder.prepareToRecord()) {
+                        // Enable metering if requested
+                        if (properties.meteringEnabled) {
+                            recorder.meteringEnabled = true
+                        }
+                        
                         recorder.record()
                         audioRecorder = recorder
                         isRecording = true
@@ -120,6 +128,11 @@ class IOSAudioRecorderPlayer : AudioRecorderPlayer {
                         lastRecordedFileURL = outputURL
                         
                         startRecordingProgressUpdates()
+                        
+                        // Start metering if enabled
+                        if (properties.meteringEnabled && audioMeteringListener != null) {
+                            startMeteringUpdates()
+                        }
                         
                         Result.success(outputURL.path ?: "")
                     } else {
@@ -320,11 +333,27 @@ class IOSAudioRecorderPlayer : AudioRecorderPlayer {
         playbackListener = listener
     }
     
+    override fun addAudioMeteringListener(listener: (AudioMeteringInfo) -> Unit) {
+        audioMeteringListener = listener
+        // Start metering if recording
+        if (isRecording && properties.meteringEnabled) {
+            startMeteringUpdates()
+        }
+    }
+    
+    override fun removeAudioMeteringListener() {
+        audioMeteringListener = null
+        meteringJob?.cancel()
+        meteringJob = null
+    }
+    
     override fun removeListeners() {
         recordingListener = null
         playbackListener = null
+        audioMeteringListener = null
         recordingJob?.cancel()
         playbackJob?.cancel()
+        meteringJob?.cancel()
         stopRecordingInternal()
         stopPlayingInternal()
     }
@@ -370,8 +399,18 @@ class IOSAudioRecorderPlayer : AudioRecorderPlayer {
                         )
                     )
                     
+                    // Check if playback has completed
                     if (!player.playing) {
-                        isPlaying = false
+                        // If we're at the end, keep the player in a paused state instead of stopping
+                        if (currentPosition >= duration && duration > 0) {
+                            println("🎵 iOS Playback completed - keeping in paused state at end")
+                            isPlaying = false
+                            // Don't call stopPlayingInternal() - keep the player instance
+                            // This allows resuming from the end or seeking
+                        } else {
+                            // Player was paused, not completed
+                            isPlaying = false
+                        }
                         break
                     }
                 } catch (e: Exception) {
@@ -385,6 +424,7 @@ class IOSAudioRecorderPlayer : AudioRecorderPlayer {
         try {
             isRecording = false
             recordingJob?.cancel()
+            meteringJob?.cancel()
             audioRecorder?.stop()
             audioRecorder = null
         } catch (e: Exception) {
@@ -440,6 +480,86 @@ class IOSAudioRecorderPlayer : AudioRecorderPlayer {
                 NSString.stringWithFormat("%.1f KB", kbValue) as String
             }
             else -> "$bytes B"
+        }
+    }
+    
+    private fun startMeteringUpdates() {
+        meteringJob = CoroutineScope(Dispatchers.Default).launch {
+            while (isRecording && properties.meteringEnabled) {
+                delay(properties.updateIntervalMs)
+                try {
+                    audioRecorder?.updateMeters()
+                    val peakPower = audioRecorder?.peakPowerForChannel(0u) ?: -160.0f
+                    val averagePower = audioRecorder?.averagePowerForChannel(0u) ?: -160.0f
+                    
+                    audioMeteringListener?.invoke(
+                        AudioMeteringInfo(
+                            currentMetering = averagePower.toFloat(),
+                            peakPower = peakPower.toFloat(),
+                            averagePower = averagePower.toFloat()
+                        )
+                    )
+                } catch (e: Exception) {
+                    // Recorder might be released or in invalid state
+                    break
+                }
+            }
+        }
+    }
+    
+    override suspend fun startPlaying(source: AudioSource): Result<Unit> {
+        return try {
+            when (source) {
+                is AudioSource.File -> startPlaying(source.path)
+                is AudioSource.Url -> {
+                    if (isPlaying) {
+                        return Result.failure(Exception("Already playing"))
+                    }
+                    
+                    val url = NSURL.URLWithString(source.url)
+                        ?: return Result.failure(Exception("Invalid URL: ${source.url}"))
+                    
+                    memScoped {
+                        val error = alloc<ObjCObjectVar<NSError?>>()
+                        error.value = null
+                        
+                        // Create AVPlayer for streaming
+                        val playerItem = if (source.headers != null) {
+                            // Create AVURLAsset with headers
+                            val options = mapOf<Any?, Any?>(
+                                "AVURLAssetHTTPHeaderFieldsKey" to source.headers
+                            )
+                            val asset = AVURLAsset(url, options)
+                            AVPlayerItem(asset)
+                        } else {
+                            AVPlayerItem(url)
+                        }
+                        
+                        // For URL playback, we need to use AVPlayer instead of AVAudioPlayer
+                        // This is a limitation - we'll need to refactor to support both
+                        // For now, return an error
+                        Result.failure(Exception("URL playback requires AVPlayer implementation. Currently only local files are supported."))
+                    }
+                }
+            }
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+    
+    override suspend fun setPlaybackSpeed(speed: Float): Result<Unit> {
+        return try {
+            if (speed < 0.5f || speed > 2.0f) {
+                return Result.failure(IllegalArgumentException("Speed must be between 0.5 and 2.0"))
+            }
+            
+            audioPlayer?.let { player ->
+                player.rate = speed
+                player.enableRate = true
+                Result.success(Unit)
+            } ?: Result.failure(IllegalStateException("Audio player not initialized"))
+        } catch (e: Exception) {
+            Result.failure(e)
         }
     }
 }

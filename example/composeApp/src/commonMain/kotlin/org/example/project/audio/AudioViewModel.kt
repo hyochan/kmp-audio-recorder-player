@@ -44,11 +44,24 @@ class AudioViewModel : ViewModel() {
     private val _recordingInfo = MutableStateFlow<String?>(null)
     val recordingInfo: StateFlow<String?> = _recordingInfo.asStateFlow()
     
+    private val _meteringLevel = MutableStateFlow(0f)
+    val meteringLevel: StateFlow<Float> = _meteringLevel.asStateFlow()
+    
+    private val _playbackSpeed = MutableStateFlow(1.0f)
+    val playbackSpeed: StateFlow<Float> = _playbackSpeed.asStateFlow()
+    
     private var recordedFilePath: String? = null
     
     init {
         setupListeners()
         loadRecordingInfo()
+        // Enable metering for demo
+        audioRecorderPlayer.setPlayerProperties(
+            AudioRecorderPlayerProperties(
+                updateIntervalMs = 25L,
+                meteringEnabled = true
+            )
+        )
     }
     
     private fun setupListeners() {
@@ -65,12 +78,29 @@ class AudioViewModel : ViewModel() {
             
             // Check if playback completed (reached the end)
             if (progress.duration > 0 && progress.currentPosition >= progress.duration) {
-                println("🎵 ViewModel detected playback completion - resetting state")
+                println("🎵 ViewModel detected playback completion - keeping final state")
                 _isPlaying.value = false
                 _isPlayingPaused.value = false
-                _playProgress.value = 0f
-                _playTime.value = "00:00:00"
+                // Keep the progress at 100% and time at duration
+                _playProgress.value = 1f
+                _playTime.value = progress.formattedDuration
             }
+        }
+        
+        // Add metering listener
+        audioRecorderPlayer.addAudioMeteringListener { meteringInfo ->
+            // Android now sends normalized values (0-1), iOS sends dB values
+            // Check if the value is already normalized (between 0 and 1) or needs conversion from dB
+            val normalizedLevel = if (meteringInfo.averagePower >= 0f && meteringInfo.averagePower <= 1f) {
+                // Already normalized (Android)
+                meteringInfo.averagePower
+            } else {
+                // dB value (iOS), convert to 0-1 range
+                // -60dB = 0, 0dB = 1
+                ((meteringInfo.averagePower + 60f) / 60f).coerceIn(0f, 1f)
+            }
+            println("📊 ViewModel Metering: raw=${meteringInfo.averagePower}, normalized=$normalizedLevel")
+            _meteringLevel.value = normalizedLevel
         }
     }
     
@@ -268,6 +298,19 @@ class AudioViewModel : ViewModel() {
             } catch (e: Exception) {
                 // Ignore error
             }
+        }
+    }
+    
+    fun setPlaybackSpeed(speed: Float) {
+        viewModelScope.launch {
+            audioRecorderPlayer.setPlaybackSpeed(speed).fold(
+                onSuccess = {
+                    _playbackSpeed.value = speed
+                },
+                onFailure = { exception ->
+                    _errorMessage.value = "Set playback speed failed: ${exception.message}"
+                }
+            )
         }
     }
     
