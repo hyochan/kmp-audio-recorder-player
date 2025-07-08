@@ -18,14 +18,16 @@ System.getenv().forEach { (key, value) ->
     }
 }
 
-// Handle GPG key from environment variable or file (environment takes precedence)
+// Handle GPG key from environment variable or file
 val envGpgKey = System.getenv("ORG_GRADLE_PROJECT_signingInMemoryKey")
-if (envGpgKey != null) {
+if (envGpgKey != null && envGpgKey.isNotBlank()) {
+    // CI/CD: Use environment variable directly
     val cleanedKey = envGpgKey.trim()
     localProperties.setProperty("signingInMemoryKey", cleanedKey)
     project.extensions.extraProperties.set("signingInMemoryKey", cleanedKey)
+    println("DEBUG: GPG key loaded from environment variable (length: ${cleanedKey.length})")
 } else {
-    // Read GPG key from file if signingInMemoryKeyFile is specified
+    // Local development: Read GPG key from file if specified
     val keyFile = localProperties.getProperty("signingInMemoryKeyFile")
     if (keyFile != null) {
         val keyFileHandle = rootProject.file(keyFile)
@@ -33,7 +35,12 @@ if (envGpgKey != null) {
             val keyContent = keyFileHandle.readText().trim()
             localProperties.setProperty("signingInMemoryKey", keyContent)
             project.extensions.extraProperties.set("signingInMemoryKey", keyContent)
+            println("DEBUG: GPG key loaded from file: $keyFile (length: ${keyContent.length})")
+        } else {
+            println("DEBUG: GPG key file not found: $keyFile")
         }
+    } else {
+        println("DEBUG: No GPG key configured (for CI, set ORG_GRADLE_PROJECT_signingInMemoryKey)")
     }
 }
 
@@ -41,6 +48,8 @@ if (envGpgKey != null) {
 localProperties.forEach { key, value ->
     // Set as project extra properties
     project.extra.set(key.toString(), value)
+    // Also set via extensions for vanniktech plugin
+    project.extensions.extraProperties.set(key.toString(), value)
     
     // For vanniktech plugin, also set as system properties
     if (key.toString().startsWith("maven") || key.toString().startsWith("central") || key.toString().startsWith("signing")) {
@@ -65,6 +74,14 @@ criticalProperties.forEach { propName ->
     if (value != null) {
         project.extra.set(propName, value)
         System.setProperty(propName, value)
+        // Also set as gradle property for vanniktech plugin
+        project.extensions.extraProperties.set(propName, value)
+        if (propName == "signingInMemoryKey") {
+            println("DEBUG: signingInMemoryKey is set (length: ${value.length})")
+            println("DEBUG: First 50 chars: ${value.take(50)}")
+        }
+    } else if (propName == "signingInMemoryKey") {
+        println("DEBUG: signingInMemoryKey is NOT set!")
     }
 }
 

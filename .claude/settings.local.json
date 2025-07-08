@@ -12,7 +12,10 @@
       "Bash(git checkout:*)",
       "Bash(chmod:*)",
       "Bash(./scripts/update-readme-version.sh:*)",
-      "Bash(grep:*)"
+      "Bash(grep:*)",
+      "Bash(git commit:*)",
+      "WebFetch(domain:vanniktech.github.io)",
+      "WebFetch(domain:github.com)"
     ],
     "deny": []
   }
