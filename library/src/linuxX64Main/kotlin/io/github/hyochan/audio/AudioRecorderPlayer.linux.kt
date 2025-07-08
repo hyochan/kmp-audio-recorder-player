@@ -8,6 +8,7 @@ class LinuxAudioRecorderPlayer : AudioRecorderPlayer {
     
     private var recordingListener: ((RecordingProgress) -> Unit)? = null
     private var playbackListener: ((PlaybackProgress) -> Unit)? = null
+    private var audioMeteringListener: ((AudioMeteringInfo) -> Unit)? = null
     
     override suspend fun startRecording(filePath: String?): Result<String> {
         return Result.failure(Exception("Audio recording not implemented for Linux platform yet"))
@@ -61,9 +62,18 @@ class LinuxAudioRecorderPlayer : AudioRecorderPlayer {
         playbackListener = listener
     }
     
+    override fun addAudioMeteringListener(listener: (AudioMeteringInfo) -> Unit) {
+        audioMeteringListener = listener
+    }
+    
+    override fun removeAudioMeteringListener() {
+        audioMeteringListener = null
+    }
+    
     override fun removeListeners() {
         recordingListener = null
         playbackListener = null
+        audioMeteringListener = null
     }
     
     override fun setPlayerProperties(properties: AudioRecorderPlayerProperties) {
@@ -72,6 +82,14 @@ class LinuxAudioRecorderPlayer : AudioRecorderPlayer {
     
     override fun setRecorderProperties(audioSet: RecorderAudioSet) {
         // Linux implementation stub - no action needed
+    }
+    
+    override suspend fun startPlaying(source: AudioSource): Result<Unit> {
+        return Result.failure(Exception("Audio playback not implemented for Linux native platform yet"))
+    }
+    
+    override suspend fun setPlaybackSpeed(speed: Float): Result<Unit> {
+        return Result.failure(Exception("Playback speed control not implemented for Linux native platform yet"))
     }
 }
 

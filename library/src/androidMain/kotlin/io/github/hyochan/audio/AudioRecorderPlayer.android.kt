@@ -20,8 +20,10 @@ class AndroidAudioRecorderPlayer(
     
     private var recordingListener: ((RecordingProgress) -> Unit)? = null
     private var playbackListener: ((PlaybackProgress) -> Unit)? = null
+    private var audioMeteringListener: ((AudioMeteringInfo) -> Unit)? = null
     private var recordingJob: Job? = null
     private var playbackJob: Job? = null
+    private var meteringJob: Job? = null
     
     private var isRecording = false
     private var isPlaying = false
@@ -119,6 +121,11 @@ class AndroidAudioRecorderPlayer(
             lastRecordedFile = outputFile
             
             startRecordingProgressUpdates()
+            
+            // Start metering if enabled
+            if (properties.meteringEnabled && audioMeteringListener != null) {
+                startMeteringUpdates()
+            }
             
             Result.success(outputFile)
         } catch (e: Exception) {
@@ -317,11 +324,27 @@ class AndroidAudioRecorderPlayer(
         playbackListener = listener
     }
     
+    override fun addAudioMeteringListener(listener: (AudioMeteringInfo) -> Unit) {
+        audioMeteringListener = listener
+        // Start metering if recording
+        if (isRecording && properties.meteringEnabled) {
+            startMeteringUpdates()
+        }
+    }
+    
+    override fun removeAudioMeteringListener() {
+        audioMeteringListener = null
+        meteringJob?.cancel()
+        meteringJob = null
+    }
+    
     override fun removeListeners() {
         recordingListener = null
         playbackListener = null
+        audioMeteringListener = null
         recordingJob?.cancel()
         playbackJob?.cancel()
+        meteringJob?.cancel()
         stopRecordingInternal()
         stopPlayingInternal()
     }
@@ -383,6 +406,7 @@ class AndroidAudioRecorderPlayer(
             isRecording = false
             isPaused = false
             recordingJob?.cancel()
+            meteringJob?.cancel()
             mediaRecorder?.apply {
                 stop()
                 release()
@@ -423,6 +447,149 @@ class AndroidAudioRecorderPlayer(
         val seconds = totalSeconds % 60
         val centiseconds = (millis % 1000) / 10 // 0.01초 단위 (centiseconds)
         return String.format("%02d:%02d:%02d", minutes, seconds, centiseconds)
+    }
+    
+    private fun startMeteringUpdates() {
+        println("🎤 Starting metering updates - enabled=${properties.meteringEnabled}, listener=${audioMeteringListener != null}")
+        meteringJob = CoroutineScope(Dispatchers.Default).launch {
+            // Add initial delay to allow MediaRecorder to start properly
+            delay(500)
+            
+            var callCount = 0
+            while (isRecording && !isPaused && properties.meteringEnabled) {
+                try {
+                    val recorder = mediaRecorder
+                    if (recorder == null) {
+                        println("🎤 MediaRecorder is null, stopping metering")
+                        break
+                    }
+                    
+                    // Get max amplitude - this resets after each call
+                    val maxAmplitude = recorder.maxAmplitude
+                    callCount++
+                    
+                    // Always send some level to show activity, even if amplitude is 0
+                    val normalizedLevel = if (maxAmplitude > 0) {
+                        // Map amplitude (0-32767) to normalized level (0-1)
+                        // Use square root for better visual response
+                        kotlin.math.sqrt(maxAmplitude / 32767.0).toFloat()
+                    } else {
+                        // Send a small random noise to show the meter is working
+                        (0.05f + kotlin.random.Random.nextFloat() * 0.05f)
+                    }
+                    
+                    println("🎤 Android Metering #$callCount: amplitude=$maxAmplitude, normalized=$normalizedLevel, recorder=$recorder")
+                    
+                    // Send the normalized value on Main thread for UI updates
+                    withContext(Dispatchers.Main) {
+                        audioMeteringListener?.invoke(
+                            AudioMeteringInfo(
+                                currentMetering = normalizedLevel,
+                                peakPower = normalizedLevel,
+                                averagePower = normalizedLevel
+                            )
+                        )
+                    }
+                    
+                    // Use longer interval to allow more audio accumulation
+                    delay(100L)
+                } catch (e: Exception) {
+                    println("🎤 Metering error: ${e.message}, ${e.stackTraceToString()}")
+                    // Recorder might be released or in invalid state
+                    break
+                }
+            }
+            
+            println("🎤 Metering loop ended - isRecording=$isRecording, isPaused=$isPaused")
+            
+            // Send zero level when stopping on Main thread
+            withContext(Dispatchers.Main) {
+                audioMeteringListener?.invoke(
+                    AudioMeteringInfo(
+                        currentMetering = 0f,
+                        peakPower = 0f,
+                        averagePower = 0f
+                    )
+                )
+            }
+        }
+    }
+    
+    override suspend fun startPlaying(source: AudioSource): Result<Unit> {
+        return try {
+            when (source) {
+                is AudioSource.File -> startPlaying(source.path)
+                is AudioSource.Url -> {
+                    if (isPlaying) {
+                        return Result.failure(Exception("Already playing"))
+                    }
+                    
+                    mediaPlayer = MediaPlayer().apply {
+                        // Set headers if provided
+                        if (source.headers != null) {
+                            setDataSource(context, android.net.Uri.parse(source.url), source.headers)
+                        } else {
+                            setDataSource(source.url)
+                        }
+                        
+                        setOnPreparedListener {
+                            start()
+                            this@AndroidAudioRecorderPlayer.isPlaying = true
+                            startPlaybackProgressUpdates()
+                        }
+                        
+                        setOnCompletionListener { _ ->
+                            println("🎵 Playback completed - auto stopping")
+                            this@AndroidAudioRecorderPlayer.isPlaying = false
+                            playbackJob?.cancel()
+                            
+                            // Notify listener about completion
+                            playbackListener?.invoke(
+                                PlaybackProgress(
+                                    currentPosition = duration.toLong(),
+                                    duration = duration.toLong(),
+                                    formattedCurrentTime = formatTime(duration.toLong()),
+                                    formattedDuration = formatTime(duration.toLong())
+                                )
+                            )
+                        }
+                        
+                        setOnErrorListener { _, what, extra ->
+                            println("MediaPlayer error: what=$what, extra=$extra")
+                            stopPlayingInternal()
+                            false
+                        }
+                        
+                        // Use async preparation for network sources
+                        prepareAsync()
+                    }
+                    
+                    Result.success(Unit)
+                }
+            }
+        } catch (e: Exception) {
+            stopPlayingInternal()
+            Result.failure(e)
+        }
+    }
+    
+    override suspend fun setPlaybackSpeed(speed: Float): Result<Unit> {
+        return try {
+            if (speed < 0.5f || speed > 2.0f) {
+                return Result.failure(IllegalArgumentException("Speed must be between 0.5 and 2.0"))
+            }
+            
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                mediaPlayer?.playbackParams = mediaPlayer?.playbackParams?.apply {
+                    this.speed = speed
+                } ?: return Result.failure(IllegalStateException("Media player not initialized"))
+                Result.success(Unit)
+            } else {
+                Result.failure(Exception("Playback speed control not supported on this Android version"))
+            }
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
     }
 }
 

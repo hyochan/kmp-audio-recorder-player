@@ -16,6 +16,7 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import org.example.project.audio.AudioViewModel
 import org.jetbrains.compose.ui.tooling.preview.Preview
+import kotlin.math.roundToInt
 
 @Composable
 @Preview
@@ -40,6 +41,8 @@ fun AudioRecorderPlayerApp() {
     val isPlayingPaused by viewModel.isPlayingPaused.collectAsState()
     val errorMessage by viewModel.errorMessage.collectAsState()
     val recordingInfo by viewModel.recordingInfo.collectAsState()
+    val meteringLevel by viewModel.meteringLevel.collectAsState()
+    val playbackSpeed by viewModel.playbackSpeed.collectAsState()
 
     Column(
         modifier = Modifier
@@ -82,6 +85,53 @@ fun AudioRecorderPlayerApp() {
             letterSpacing = 3.sp,
             modifier = Modifier.padding(top = 32.dp)
         )
+        
+        // Audio metering display (only show when recording)
+        if (isRecording) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 32.dp)
+                    .padding(top = 16.dp),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                Text(
+                    text = "Recording Level",
+                    color = Color.White,
+                    fontSize = 12.sp,
+                    modifier = Modifier.padding(bottom = 8.dp)
+                )
+                
+                // Metering bar
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(8.dp)
+                        .background(Color(0xFF263238), RoundedCornerShape(4.dp))
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxHeight()
+                            .fillMaxWidth(meteringLevel)
+                            .background(
+                                when {
+                                    meteringLevel > 0.8f -> Color.Red
+                                    meteringLevel > 0.6f -> Color.Yellow
+                                    else -> Color.Green
+                                },
+                                RoundedCornerShape(4.dp)
+                            )
+                    )
+                }
+                
+                Text(
+                    text = "${(meteringLevel * 100).roundToInt()}%",
+                    color = Color(0xFFCCCCCC),
+                    fontSize = 12.sp,
+                    modifier = Modifier.padding(top = 4.dp)
+                )
+            }
+        }
 
         // Recording info display
         recordingInfo?.let { info ->
@@ -169,6 +219,59 @@ fun AudioRecorderPlayerApp() {
                 fontSize = 14.sp,
                 modifier = Modifier.padding(top = 8.dp)
             )
+            
+            // Playback speed control
+            if (isPlaying) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 28.dp)
+                    .padding(top = 16.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                    Text(
+                        text = "Playback Speed: ${playbackSpeed}x",
+                        color = Color.White,
+                        fontSize = 14.sp,
+                        modifier = Modifier.padding(bottom = 8.dp)
+                    )
+                    
+                    Slider(
+                        value = playbackSpeed,
+                        onValueChange = { speed ->
+                            viewModel.setPlaybackSpeed(speed)
+                        },
+                        valueRange = 0.5f..2.0f,
+                        steps = 5, // 0.5, 0.75, 1.0, 1.25, 1.5, 1.75, 2.0
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = SliderDefaults.colors(
+                            thumbColor = Color.White,
+                            activeTrackColor = Color.White,
+                            inactiveTrackColor = Color(0xFF37474F)
+                        )
+                    )
+                    
+                    // Speed preset buttons
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceEvenly
+                    ) {
+                        listOf(0.5f, 0.75f, 1.0f, 1.5f, 2.0f).forEach { speed ->
+                            TextButton(
+                                onClick = { viewModel.setPlaybackSpeed(speed) },
+                                colors = ButtonDefaults.textButtonColors(
+                                    contentColor = if (playbackSpeed == speed) Color.White else Color(0xFFCCCCCC)
+                                )
+                            ) {
+                                Text(
+                                    text = "${speed}x",
+                                    fontSize = 12.sp
+                                )
+                            }
+                        }
+                    }
+                }
+            }
 
             // Player controls
             FlowRow(

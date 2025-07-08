@@ -139,8 +139,36 @@ data class RecorderAudioSet(
  * Configuration properties for AudioRecorderPlayer
  */
 data class AudioRecorderPlayerProperties(
-    val updateIntervalMs: Long = 25L // Update interval in milliseconds (default: 0.025 seconds = 25ms)
+    val updateIntervalMs: Long = 25L, // Update interval in milliseconds (default: 0.025 seconds = 25ms)
+    val meteringEnabled: Boolean = false // Enable audio metering for recording levels
 )
+
+/**
+ * Audio metering information during recording
+ */
+data class AudioMeteringInfo(
+    val currentMetering: Float, // Current audio level in dB (e.g., -60.0 to 0.0)
+    val peakPower: Float, // Peak power level in dB
+    val averagePower: Float // Average power level in dB
+)
+
+/**
+ * Represents an audio source for playback
+ */
+sealed class AudioSource {
+    /**
+     * A local file path
+     */
+    data class File(val path: String) : AudioSource()
+    
+    /**
+     * A remote URL with optional HTTP headers
+     */
+    data class Url(
+        val url: String,
+        val headers: Map<String, String>? = null
+    ) : AudioSource()
+}
 
 /**
  * Audio recording and playback interface for multiplatform support
@@ -175,6 +203,12 @@ interface AudioRecorderPlayer {
      * @param filePath Optional file path to play. If null, plays the last recorded file.
      */
     suspend fun startPlaying(filePath: String? = null): Result<Unit>
+    
+    /**
+     * Start playing audio from an AudioSource (file or URL)
+     * @param source Audio source to play from (local file or remote URL with optional headers)
+     */
+    suspend fun startPlaying(source: AudioSource): Result<Unit>
     
     /**
      * Pause the current playback
@@ -214,6 +248,17 @@ interface AudioRecorderPlayer {
     fun addPlaybackListener(listener: (PlaybackProgress) -> Unit)
     
     /**
+     * Add listener for audio metering updates during recording
+     * Note: meteringEnabled must be set to true in AudioRecorderPlayerProperties
+     */
+    fun addAudioMeteringListener(listener: (AudioMeteringInfo) -> Unit)
+    
+    /**
+     * Remove audio metering listener
+     */
+    fun removeAudioMeteringListener()
+    
+    /**
      * Remove all listeners and cleanup resources
      */
     fun removeListeners()
@@ -235,6 +280,13 @@ interface AudioRecorderPlayer {
      * @param audioSet Audio configuration settings for recording
      */
     fun setRecorderProperties(audioSet: RecorderAudioSet)
+    
+    /**
+     * Set the playback speed/rate
+     * @param speed Playback speed (0.5 to 2.0, where 1.0 is normal speed)
+     * @return Result indicating success or failure
+     */
+    suspend fun setPlaybackSpeed(speed: Float): Result<Unit>
 }
 
 /**

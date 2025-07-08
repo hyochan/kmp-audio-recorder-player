@@ -9,6 +9,7 @@ class WasmJSAudioRecorderPlayer : AudioRecorderPlayer {
     
     private var recordingListener: ((RecordingProgress) -> Unit)? = null
     private var playbackListener: ((PlaybackProgress) -> Unit)? = null
+    private var audioMeteringListener: ((AudioMeteringInfo) -> Unit)? = null
     
     override suspend fun startRecording(filePath: String?): Result<String> {
         return Result.failure(Exception("Audio recording is not supported on WasmJS"))
@@ -62,9 +63,18 @@ class WasmJSAudioRecorderPlayer : AudioRecorderPlayer {
         playbackListener = listener
     }
     
+    override fun addAudioMeteringListener(listener: (AudioMeteringInfo) -> Unit) {
+        audioMeteringListener = listener
+    }
+    
+    override fun removeAudioMeteringListener() {
+        audioMeteringListener = null
+    }
+    
     override fun removeListeners() {
         recordingListener = null
         playbackListener = null
+        audioMeteringListener = null
     }
     
     override fun setPlayerProperties(properties: AudioRecorderPlayerProperties) {
@@ -73,6 +83,14 @@ class WasmJSAudioRecorderPlayer : AudioRecorderPlayer {
     
     override fun setRecorderProperties(audioSet: RecorderAudioSet) {
         // WasmJS implementation stub - no action needed
+    }
+    
+    override suspend fun startPlaying(source: AudioSource): Result<Unit> {
+        return Result.failure(Exception("Audio playback is not supported on WasmJS"))
+    }
+    
+    override suspend fun setPlaybackSpeed(speed: Float): Result<Unit> {
+        return Result.failure(Exception("Playback speed control not supported on WASM/JS platform"))
     }
 }
 
