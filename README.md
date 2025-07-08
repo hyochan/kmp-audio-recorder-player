@@ -89,28 +89,3 @@ Found a bug or have a feature request? Please create an issue on [GitHub](https:
 4. **Test**: Run `./gradlew :library:test`
 
 For detailed setup instructions, see the [Kotlin Multiplatform Library Template](https://github.com/Kotlin/multiplatform-library-template) documentation.
-
----
-
-## Publishing
-
-> **Note**: GitHub Actions CI publishing is currently experiencing issues. Local publishing is the recommended approach.
-
-### Local Publishing
-
-To publish the library to Maven Central locally:
-
-1. **Prerequisites**: Make sure you have `local.properties` and `gpg_key_content.gpg` files configured
-2. **Run the script**:
-   ```bash
-   ./publish-local.sh
-   ```
-
-The script will automatically:
-
-- Clean the build
-- Build all platform artifacts
-- Sign with GPG
-- Upload to Maven Central
-
-Check the deployment status at [Maven Central Portal](https://central.sonatype.com/publishing/deployments).
