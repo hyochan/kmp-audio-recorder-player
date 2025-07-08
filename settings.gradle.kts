@@ -13,6 +13,5 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "multiplatform-library-template"
+rootProject.name = "kmp-audio-recorder-player"
 include(":library")
-include(":example:composeApp")

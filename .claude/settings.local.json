@@ -6,7 +6,8 @@
       "Bash(adb:*)",
       "Bash(find:*)",
       "Bash(xcodebuild:*)",
-      "Bash(rg:*)"
+      "Bash(rg:*)",
+      "Bash(git add:*)"
     ],
     "deny": []
   }
